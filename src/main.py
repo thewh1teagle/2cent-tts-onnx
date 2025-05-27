@@ -27,7 +27,7 @@ def main():
     token_ids = tokenizer.tokenize_ids(phonemes)
     input_ids = torch.LongTensor([token_ids])
 
-    # Extract features
+    # Extract features using the GGUF model
     features = feature_extractor.extract_features(input_ids)
     # ^ [1, 17, 1024]
 
