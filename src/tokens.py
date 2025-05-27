@@ -13,3 +13,6 @@ class Tokenizer:
         # Encode the text and return token IDs
         encoded = self.tokenizer.encode(text)
         return encoded.ids
+
+    def get_tokenizer(self):
+        return self.tokenizer

@@ -11,3 +11,5 @@ wheels/
 
 *.gguf
 *.json
+*.onnx
+*.wav
