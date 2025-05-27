@@ -200,6 +200,7 @@ class SNACDecoder:
         
         return samples_int16
 
+    @staticmethod
     def extract_snac_codes_from_tokens(token_ids, tokenizer):
 
         audio_codes = []
@@ -208,6 +209,7 @@ class SNACDecoder:
         for token_id in token_ids:
             try:
                 token_str = tokenizer.id_to_token(token_id)
+                print(f"Token ID {token_id} -> '{token_str}'")
                 if not token_str:
                     continue
                 
