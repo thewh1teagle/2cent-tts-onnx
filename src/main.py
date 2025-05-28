@@ -14,14 +14,16 @@ from decoder import SNACDecoder
 import torch
 import soundfile as sf
 import re
+from strategy6 import test_snac_strategy_6, test_snac_strategy_6_detailed
 
-def generate_audio_tokens(text, tokenizer, feature_extractor, max_new_tokens=512):
+
+def generate_audio_tokens(text, tokenizer, feature_extractor, max_new_tokens=1024):
     """
     Generate <audio_123> tokens from phonemes using the Qwen3 model
     """
     
     # Step 1: Phonemize text
-    phonemes = "<s> " + phonemize(text, preserve_punctuation=True) + " </s>"
+    phonemes = phonemize(text, preserve_punctuation=True) + " <s>"
     print(f"Phonemes: {phonemes}")
     
     # Step 2: Tokenize phonemes
@@ -40,8 +42,7 @@ def generate_audio_tokens(text, tokenizer, feature_extractor, max_new_tokens=512
             if hasattr(tokenizer.get_tokenizer(), 'pad_token_id'):
                 pad_token_id = tokenizer.get_tokenizer().pad_token_id
         except:
-            pad_token_id = 0  # Default
-            
+            pad_token_id = 0  # Default 
         try:
             eos_token_id = tokenizer.get_tokenizer().token_to_id("</s>") 
             # if hasattr(tokenizer.get_tokenizer(), 'eos_token_id'):
@@ -53,8 +54,8 @@ def generate_audio_tokens(text, tokenizer, feature_extractor, max_new_tokens=512
         generated_ids = feature_extractor.model.generate(
             input_ids=input_ids,
             max_new_tokens=max_new_tokens,
-            do_sample=False,
-            temperature=0.0,
+            do_sample=True,
+            temperature=0.7,
             pad_token_id=pad_token_id,
             eos_token_id=eos_token_id,
         )
@@ -62,30 +63,32 @@ def generate_audio_tokens(text, tokenizer, feature_extractor, max_new_tokens=512
     # Step 4: Extract only the newly generated tokens (remove input)
     new_tokens = generated_ids[0][len(token_ids):]
     
-    # Step 5: Convert to token strings and filter for audio tokens
-    audio_tokens = []
-    all_generated_tokens = []
+    # #print ( new_tokens )
+    # # Step 5: Convert to token strings and filter for audio tokens
+    # audio_tokens = []
+    # all_generated_tokens = []
     
-    for token_id in new_tokens:
-        try:
-            token_str = tokenizer.get_tokenizer().id_to_token(token_id.item())
-            all_generated_tokens.append(token_str)
+    # for token_id in new_tokens:
+    #     try:
+    #         token_str = tokenizer.get_tokenizer().id_to_token(token_id.item())
+    #         all_generated_tokens.append(token_str)
             
-            # Check if this is an audio token - be more flexible with detection
-            if token_str and (
-                token_str.startswith('<audio_') or 
-                token_str.startswith('▁<audio_') or
-                'audio' in token_str.lower() and ('<' in token_str or '>' in token_str)
-            ):
-                audio_tokens.append(token_str)
-        except:
-            all_generated_tokens.append(f"<unk_{token_id.item()}>")
+    #         # Check if this is an audio token - be more flexible with detection
+    #         if token_str and (
+    #             token_str.startswith('<audio_') or 
+    #             token_str.startswith('▁<audio_') or
+    #             'audio' in token_str.lower() and ('<' in token_str or '>' in token_str)
+    #         ):
+    #             audio_tokens.append(token_str)
+    #     except:
+    #         all_generated_tokens.append(f"<unk_{token_id.item()}>")
     
-    print(f"Generated {len(new_tokens)} tokens")
-    print(f"Found {len(audio_tokens)} audio tokens")
-    print(f"All generated tokens: {all_generated_tokens[:20]}...")  # Show first 20
+    # print(f"Generated {len(new_tokens)} tokens")
+    # print(f"Found {len(audio_tokens)} audio tokens")
+    # print(f"All generated tokens: {all_generated_tokens}")  # Show first 20
     
-    return audio_tokens, all_generated_tokens
+    return new_tokens
+    #return audio_tokens, all_generated_tokens
 
 def get_logits_and_sample(text, tokenizer, feature_extractor):
     """
@@ -199,26 +202,40 @@ def main():
     tokenizer = Tokenizer('tokenizer.json')
     decoder = SNACDecoder("decoder_model.onnx", num_bands=3)
     
-    # Phonemize
-    text = "Hello world!"
+    # Phonemize 
+    text = "Hello world this is a test"
     phonemes = phonemize(text, preserve_punctuation=True)
- 
+  
     # Tokenize
     token_ids = tokenizer.tokenize_ids(phonemes)
     input_ids = torch.LongTensor([token_ids])
      
-     # Debug first
-    debug_model_generation(text, tokenizer, feature_extractor)
-    check_vocabulary_for_audio_tokens(tokenizer)
+    # Debug first 
+    # debug_model_generation(text, tokenizer, feature_extractor)
+    # check_vocabulary_for_audio_tokens(tokenizer)
     
     # Try to generate audio tokens
     try:
-        audio_tokens, all_tokens = generate_audio_tokens(text, tokenizer, feature_extractor)
-        print(f"\nFinal audio tokens: {audio_tokens}")
+        new_tokens = generate_audio_tokens(text, tokenizer, feature_extractor)
+        #print(f"\nFinal audio tokens: {audio_tokens}")
 
-        snac_codes = [int(re.search(r'\d+', token).group()) for token in audio_tokens]
 
-        samples, sample_rate = decoder.decode(snac_codes)
+        new_tokens = new_tokens.tolist()
+        while new_tokens[0] == 4136:
+            new_tokens = new_tokens[1:]
+
+        new_tokens = new_tokens[:-1]
+        for i in range(7):
+            success = test_snac_strategy_6(new_tokens, "tokenizer.json", "decoder_model.onnx")
+            if success:
+                print("Strategy 6 PASSED")
+                break
+            else:
+                new_tokens = new_tokens[1:]
+
+        new_tokens = [x - 4 for x in new_tokens]
+        #snac_codes = [int(re.search(r'\d+', token).group()) for token in audio_tokens]
+        samples, sample_rate = decoder.decode(new_tokens)
         samples = decoder.normalize_samples(samples)
         sf.write('audio.wav', samples, sample_rate)
         print('Created audio.wav')
