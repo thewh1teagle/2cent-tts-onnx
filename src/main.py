@@ -53,8 +53,8 @@ def generate_audio_tokens(text, tokenizer, feature_extractor, max_new_tokens=512
         generated_ids = feature_extractor.model.generate(
             input_ids=input_ids,
             max_new_tokens=max_new_tokens,
-            do_sample=True,
-            temperature=0.7,
+            do_sample=False,
+            temperature=0.0,
             pad_token_id=pad_token_id,
             eos_token_id=eos_token_id,
         )
@@ -200,13 +200,13 @@ def main():
     decoder = SNACDecoder("decoder_model.onnx", num_bands=3)
     
     # Phonemize
-    text = "One more time, let's see this."
+    text = "Hello world!"
     phonemes = phonemize(text, preserve_punctuation=True)
-
+ 
     # Tokenize
     token_ids = tokenizer.tokenize_ids(phonemes)
     input_ids = torch.LongTensor([token_ids])
-    
+     
      # Debug first
     debug_model_generation(text, tokenizer, feature_extractor)
     check_vocabulary_for_audio_tokens(tokenizer)
