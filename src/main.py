@@ -21,11 +21,11 @@ def generate_audio_tokens(text, tokenizer, feature_extractor, max_new_tokens=512
     """
     
     # Step 1: Phonemize text
-    phonemes = phonemize(text, preserve_punctuation=True)
+    phonemes = "<s> " + phonemize(text, preserve_punctuation=True) + " </s>"
     print(f"Phonemes: {phonemes}")
     
     # Step 2: Tokenize phonemes
-    token_ids = tokenizer.tokenize_ids(phonemes)
+    token_ids = tokenizer.tokenize_ids(phonemes) 
     input_ids = torch.LongTensor([token_ids])
     print(f"Input shape: {input_ids.shape}")
     print(f"Input tokens: {[tokenizer.get_tokenizer().id_to_token(token) for token in token_ids]}")
@@ -43,8 +43,9 @@ def generate_audio_tokens(text, tokenizer, feature_extractor, max_new_tokens=512
             pad_token_id = 0  # Default
             
         try:
-            if hasattr(tokenizer.get_tokenizer(), 'eos_token_id'):
-                eos_token_id = tokenizer.get_tokenizer().eos_token_id
+            eos_token_id = tokenizer.get_tokenizer().token_to_id("</s>") 
+            # if hasattr(tokenizer.get_tokenizer(), 'eos_token_id'):
+            #     eos_token_id = tokenizer.get_tokenizer().eos_token_id
         except:
             eos_token_id = None  # Let model decide
         
@@ -193,13 +194,13 @@ def debug_model_generation(text, tokenizer, feature_extractor):
 
 # Main usage function
 
-def main():
+def main(): 
     feature_extractor = FeatureExtractor('2cent.gguf')
     tokenizer = Tokenizer('tokenizer.json')
     decoder = SNACDecoder("decoder_model.onnx", num_bands=3)
     
     # Phonemize
-    text = "hello where are you from"
+    text = "One more time, let's see this."
     phonemes = phonemize(text, preserve_punctuation=True)
 
     # Tokenize
