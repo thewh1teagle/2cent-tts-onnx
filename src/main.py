@@ -205,12 +205,7 @@ def main():
     
     # Phonemize 
     text = "Hello world this is a test"
-    phonemes = phonemize(text, preserve_punctuation=True)
-  
-    # Tokenize
-    token_ids = tokenizer.tokenize_ids(phonemes)
-    input_ids = torch.LongTensor([token_ids])
-     
+       
     # Debug first 
     # debug_model_generation(text, tokenizer, feature_extractor)
     # check_vocabulary_for_audio_tokens(tokenizer)
@@ -240,13 +235,8 @@ def main():
         samples = decoder.normalize_samples(samples)
         sf.write('audio.wav', samples, sample_rate)
         print('Created audio.wav')
-        
-        # If you got audio tokens, now you can use them with SNAC
-        if audio_tokens:
-            # Convert audio tokens to codes for SNAC
-            # This part depends on how your audio tokens map to SNAC codes
-            pass
-        
+
+    
     except Exception as e:
         print(f"Generation failed: {e}")
         print("Trying alternative approach...")
