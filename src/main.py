@@ -173,12 +173,17 @@ def debug_model_generation(text, tokenizer, feature_extractor):
 # Main usage function
 
 def main(): 
-    feature_extractor = FeatureExtractor('2cent.gguf')
+
+
+    #feature_extractor = FeatureExtractor('2cent_v1.gguf', 64)
+    feature_extractor = FeatureExtractor('2cent.gguf', 256)
+
     tokenizer = Tokenizer('tokenizer.json')
     decoder = SNACDecoder("decoder_model.onnx", num_bands=3)
     
     # Phonemize 
-    text = "Hello world this is a test"
+    #it doesn't like punctuations , ! ? .
+    text = "Hello world, this is a test"
        
     # Debug first 
     # debug_model_generation(text, tokenizer, feature_extractor)
@@ -198,13 +203,13 @@ def main():
         if new_tokens and new_tokens[-1] == eos_token:
             new_tokens = new_tokens[:-1]
             
-        for i in range(7):
-            success = test_snac_strategy_6(new_tokens, "tokenizer.json", "decoder_model.onnx")
-            if success:
-                print("Strategy 6 PASSED")
-                break
-            else:
-                new_tokens = new_tokens[1:]
+        # for i in range(7):
+        #     success = test_snac_strategy_6(new_tokens, "tokenizer.json", "decoder_model.onnx")
+        #     if success:
+        #         print("Strategy 6 PASSED")
+        #         break
+        #     else:
+        #         new_tokens = new_tokens[1:]
 
         new_tokens = [x - 4 for x in new_tokens]
         #snac_codes = [int(re.search(r'\d+', token).group()) for token in audio_tokens]
