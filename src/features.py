@@ -4,15 +4,15 @@ import torch
 from transformers import Qwen3Config, Qwen3ForCausalLM
 
 class FeatureExtractor:
-    def __init__(self, gguf_path: str):
+    def __init__(self, gguf_path: str, head_dim: int = 256):
         # First, inspect the GGUF file to understand the actual model structure
         reader = gguf.GGUFReader(gguf_path)
         
         # Debug: Print tensor information to understand the model structure
-        print("GGUF file tensor information:")
+        #print("GGUF file tensor information:")
         tensor_info = {}
         for gg_tensor in reader.tensors:
-            print(f"Tensor: {gg_tensor.name}, Shape: {gg_tensor.shape}, Type: {gg_tensor.tensor_type}")
+            #print(f"Tensor: {gg_tensor.name}, Shape: {gg_tensor.shape}, Type: {gg_tensor.tensor_type}")
             tensor_info[gg_tensor.name] = gg_tensor.shape
         
         # Analyze the structure to determine correct config values
@@ -49,7 +49,6 @@ class FeatureExtractor:
         # Analyze attention tensor shapes to get correct dimensions
         num_attention_heads = None
         num_key_value_heads = None
-        head_dim = None
         
         # Look at the first layer's attention weights
         q_shape = tensor_info.get('blk.0.attn_q.weight')
@@ -85,8 +84,6 @@ class FeatureExtractor:
             
             # Calculate head dimensions
             # Find common divisors to determine head_dim
-            #change to 64 for v0.1 model
-            head_dim = 256
             num_attention_heads = q_out_dim // head_dim
             num_key_value_heads = k_out_dim // head_dim
             
@@ -249,7 +246,7 @@ class FeatureExtractor:
             raise RuntimeError(f"Shape mismatch for {tensor_name}: expected {expected_shape}, got {actual_shape}")
         
         target_param.data[:] = source_tensor
-        print(f"Successfully loaded {tensor_name}: {actual_shape}")
+        #print(f"Successfully loaded {tensor_name}: {actual_shape}")
 
     def extract_features(self, input_ids: torch.LongTensor):
         """
