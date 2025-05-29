@@ -19,7 +19,7 @@ from strategy6 import test_snac_strategy_6, test_snac_strategy_6_detailed
 
 def generate_audio_tokens(text, tokenizer, feature_extractor, max_new_tokens=1024):
     """
-    Generate <audio_123> tokens from phonemes using the Qwen3 model
+    Generate tokens from phonemes using the Qwen3 model
     """
     
     # Step 1: Phonemize text
@@ -61,35 +61,9 @@ def generate_audio_tokens(text, tokenizer, feature_extractor, max_new_tokens=102
             eos_token_id=eos_token_id,
         )
     
-    # Step 4: Extract only the newly generated tokens (remove input)
     new_tokens = generated_ids[0][len(token_ids):]
     
-    # #print ( new_tokens )
-    # # Step 5: Convert to token strings and filter for audio tokens
-    # audio_tokens = []
-    # all_generated_tokens = []
-    
-    # for token_id in new_tokens:
-    #     try:
-    #         token_str = tokenizer.get_tokenizer().id_to_token(token_id.item())
-    #         all_generated_tokens.append(token_str)
-            
-    #         # Check if this is an audio token - be more flexible with detection
-    #         if token_str and (
-    #             token_str.startswith('<audio_') or 
-    #             token_str.startswith('▁<audio_') or
-    #             'audio' in token_str.lower() and ('<' in token_str or '>' in token_str)
-    #         ):
-    #             audio_tokens.append(token_str)
-    #     except:
-    #         all_generated_tokens.append(f"<unk_{token_id.item()}>")
-    
-    # print(f"Generated {len(new_tokens)} tokens")
-    # print(f"Found {len(audio_tokens)} audio tokens")
-    # print(f"All generated tokens: {all_generated_tokens}")  # Show first 20
-    
     return new_tokens
-    #return audio_tokens, all_generated_tokens
 
 def get_logits_and_sample(text, tokenizer, feature_extractor):
     """
@@ -220,7 +194,10 @@ def main():
         while new_tokens[0] == 4136:
             new_tokens = new_tokens[1:]
 
-        new_tokens = new_tokens[:-1]
+        eos_token = 3
+        if new_tokens and new_tokens[-1] == eos_token:
+            new_tokens = new_tokens[:-1]
+            
         for i in range(7):
             success = test_snac_strategy_6(new_tokens, "tokenizer.json", "decoder_model.onnx")
             if success:
@@ -239,12 +216,5 @@ def main():
     
     except Exception as e:
         print(f"Generation failed: {e}")
-        print("Trying alternative approach...")
-        
-        # Try the logits approach
-        next_token, logits = get_logits_and_sample(text, tokenizer, feature_extractor)
-        print(f"Single token prediction: {next_token}")
-
-
 
 main()
