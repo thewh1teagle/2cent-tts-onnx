@@ -182,7 +182,7 @@ def main():
     decoder = SNACDecoder("decoder_model.onnx", num_bands=3)
     
     # Phonemize 
-    #it doesn't like punctuations , ! ? .
+    #it doesn't like punctuations ! ? .
     text = "Hello world, this is a test"
        
     # Debug first 
