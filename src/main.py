@@ -43,7 +43,7 @@ def generate_audio_tokens(text, tokenizer, feature_extractor, max_new_tokens=102
             if hasattr(tokenizer.get_tokenizer(), 'pad_token_id'):
                 pad_token_id = tokenizer.get_tokenizer().pad_token_id
         except:
-            pad_token_id = 0  # Default 
+            pad_token_id = 1  # Default 
         try:
             eos_token_id = tokenizer.get_tokenizer().token_to_id("</s>") 
             # if hasattr(tokenizer.get_tokenizer(), 'eos_token_id'):
