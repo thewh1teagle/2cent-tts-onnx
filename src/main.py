@@ -14,6 +14,7 @@ from decoder import SNACDecoder
 import torch
 import soundfile as sf
 import re
+import sys
 from strategy6 import test_snac_strategy_6, test_snac_strategy_6_detailed
 
 
@@ -174,16 +175,28 @@ def debug_model_generation(text, tokenizer, feature_extractor):
 
 def main(): 
 
+    version = "v2"
+    text = "Hello world, this is a test"
+    # Parse args: first can be version (e.g., v1 or v2), rest is text
+    if len(sys.argv) > 1:
+        if sys.argv[1] in ["v1", "v2"]:
+            version = sys.argv[1]
+            text = " ".join(sys.argv[2:]) if len(sys.argv) > 2 else text
+        else:
+            text = " ".join(sys.argv[1:])
 
-    #feature_extractor = FeatureExtractor('2cent_v1.gguf', 64)
-    feature_extractor = FeatureExtractor('2cent.gguf', 256)
+    # Version-based selection
+    if version == "v1":
+        feature_extractor = FeatureExtractor('2cent_v1.gguf', 64)
+    else:
+        feature_extractor = FeatureExtractor('2cent.gguf', 256)
 
     tokenizer = Tokenizer('tokenizer.json')
     decoder = SNACDecoder("decoder_model.onnx", num_bands=3)
     
     # Phonemize 
     #it doesn't like punctuations ! ? .
-    text = "Hello world, this is a test"
+    #text = "Hello world, this is a test"
        
     # Debug first 
     # debug_model_generation(text, tokenizer, feature_extractor)
