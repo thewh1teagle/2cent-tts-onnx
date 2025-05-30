@@ -24,12 +24,14 @@ def generate_audio_tokens(text, tokenizer, feature_extractor, max_new_tokens=102
     """
     
     # Step 1: Phonemize text
-    phonemes = phonemize(text, preserve_punctuation=True) + " <s>"
+    phonemes = phonemize(text, preserve_punctuation=True)
     print(f"Phonemes: {phonemes}")
     
     # Step 2: Tokenize phonemes
     token_ids = tokenizer.tokenize_ids(phonemes) 
     token_ids = [x for x in token_ids if x != 4136]
+    token_ids = token_ids + [2] + [4136]
+    
     input_ids = torch.LongTensor([token_ids])
     print(f"Input shape: {input_ids.shape}")
     print(f"Input tokens: {[tokenizer.get_tokenizer().id_to_token(token) for token in token_ids]}")
