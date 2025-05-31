@@ -138,7 +138,8 @@ def debug_model_generation(text, tokenizer, feature_extractor):
     """
     Debug the model's generation capabilities
     """
-    phonemes = phonemize(text, preserve_punctuation=True)
+    phonemes = phonemize(text, language='en-us', backend='espeak', with_stress=True)
+  
     token_ids = tokenizer.tokenize_ids(phonemes)
     input_ids = torch.LongTensor([token_ids])
     
