@@ -24,7 +24,8 @@ def generate_audio_tokens(text, tokenizer, feature_extractor, max_new_tokens=102
     """
     
     # Step 1: Phonemize text
-    phonemes = phonemize(text, preserve_punctuation=True)
+    phonemes = phonemize(text, language='en-us', backend='espeak', with_stress=True)
+    
     print(f"Phonemes: {phonemes}")
     
     # Step 2: Tokenize phonemes
