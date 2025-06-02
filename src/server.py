@@ -6,6 +6,8 @@ import time
 import torch
 import soundfile as sf
 from features import FeatureExtractor
+from llama_cpp import Llama
+
 
 from phonemize import phonemize
 from tokens import Tokenizer
@@ -18,14 +20,31 @@ app = Flask(__name__)
 tokenizer = None
 decoder = None
 feature_extractor = None
+real_tokenizer = None
+llm = None
 
 def initialize_loaders():
-    global tokenizer, decoder, feature_extractor
+    global tokenizer, decoder, feature_extractor, real_tokenizer, llm
+
+    real_tokenizer = PreTrainedTokenizerFast(tokenizer_file="tokenizer.json")  
 
     # Uncomment if you want to use feature_extractor
-    feature_extractor = FeatureExtractor('2cent.gguf', 256)
+    #feature_extractor = FeatureExtractor('2cent.gguf', 256)
     tokenizer = Tokenizer('tokenizer.json')
     decoder = SNACDecoder("decoder_model.onnx", num_bands=3)
+
+    # Initialize with deterministic parameters
+    llm = Llama(
+        model_path="2cent.gguf",
+        seed=42,
+        temperature=0.0,  # Deterministic
+        top_k=1,         # Only top token
+        top_p=1.0,       # No nucleus sampling
+        repeat_penalty=1.0,
+        n_ctx=4096,
+        n_gpu_layers=-1  # Use all layers on GPU
+    )
+
 
 
 def generate_audio_tokens_pytorch(text, tokenizer, max_new_tokens=1024):
@@ -33,10 +52,21 @@ def generate_audio_tokens_pytorch(text, tokenizer, max_new_tokens=1024):
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     phonemes = phonemize(text, language='en-us', backend='espeak', with_stress=True)
+    print(f"Phonemes: {phonemes}")
 
     token_ids = tokenizer.tokenize_ids(phonemes)
     token_ids = [x for x in token_ids if x != 4136]
     token_ids = token_ids + [2] + [4136]
+    print(token_ids)
+
+
+    build_phonemes = ""
+    for token_id in token_ids:
+        token = real_tokenizer.convert_ids_to_tokens([token_id])[0]
+        build_phonemes = build_phonemes + "||" + token
+    
+    print( build_phonemes )
+
 
     # Create input tensor and move to correct device
     input_ids = torch.LongTensor([token_ids]).to(device)
@@ -52,8 +82,8 @@ def generate_audio_tokens_pytorch(text, tokenizer, max_new_tokens=1024):
         generated_ids = feature_extractor.model.generate(
             input_ids=input_ids,
             max_new_tokens=max_new_tokens,
-            do_sample=False,
-            temperature=0.0,
+            do_sample=True,
+            temperature=0.01,
             pad_token_id=pad_token_id,
             eos_token_id=eos_token_id,
         )
@@ -75,16 +105,66 @@ def generate_audio_tokens_pytorch(text, tokenizer, max_new_tokens=1024):
     if new_tokens and new_tokens[-1] == eos_token:
         new_tokens = new_tokens[:-1]
     new_tokens = [x - 4 for x in new_tokens]   
+
+    print(new_tokens)
+
     return new_tokens
     
+
+
+def generate_audio_tokens_llamacpp(text, tokenizer, max_new_tokens=1024*10):
+    phonemes = phonemize(text, language='en-us', backend='espeak', with_stress=True)
+    token_ids = tokenizer.tokenize_ids(phonemes)
+
+    token_ids = [x for x in token_ids if x != 4136]
+    tokens = token_ids + [2] + [4136]
+
+
+    
+    llm.reset()
+    llm.eval(tokens)
+    
+    output_tokens = []
+    for _ in range(max_new_tokens):
+        token = llm.sample()
+        output_tokens.append(token)
+        
+        if token == llm.token_eos() or token == 151645:
+            break
+            
+        llm.eval([token])
+
+    new_tokens = output_tokens
+    while new_tokens[0] == 4136:
+        new_tokens = new_tokens[1:]
+
+    eos_token = 3
+    if new_tokens and new_tokens[-1] == eos_token:
+        new_tokens = new_tokens[:-1]
+    new_tokens = [x - 4 for x in new_tokens]   
+
+
+    return new_tokens
+
 
 def generate_audio_tokens_lmstudio(text, tokenizer, max_new_tokens=1024*10):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     phonemes = phonemize(text, language='en-us', backend='espeak', with_stress=True)
-    phonemes = phonemes.rstrip() + "<s>"
-
-
+    
+    token_ids = tokenizer.tokenize_ids(phonemes)
+    build_phonemes = ""
+    for token_id in token_ids:
+        token = real_tokenizer.convert_ids_to_tokens([token_id])[0]
+        build_phonemes = build_phonemes + "||" + token
+    
+    print( build_phonemes )
+    build_phonemes = build_phonemes.replace("||▁", " ")
+    build_phonemes = build_phonemes.replace("||", "")
+    phonemes = build_phonemes.strip() + "<s>"
     print(f"Phonemes: {phonemes}")
+    
+    # phonemes = text.rstrip() + "<s>"
+    # print(f"Phonemes: {phonemes}")
 
     url = "http://localhost:1234/v1/completions"
     headers = {"Content-Type": "application/json"}
@@ -111,11 +191,10 @@ def generate_audio_tokens_lmstudio(text, tokenizer, max_new_tokens=1024*10):
 def generate_audio(text):
     
     #LM STUDIO DOESN'T RETURN THE CORRECT TOKENS
-    #Hate to speculate on what the issue might be. Likely something obvious
+    new_tokens = generate_audio_tokens_llamacpp(text, tokenizer)
     #new_tokens = generate_audio_tokens_lmstudio(text, tokenizer)
-    
 
-    new_tokens = generate_audio_tokens_pytorch( text, tokenizer )
+    #new_tokens = generate_audio_tokens_pytorch( text, tokenizer )
     while new_tokens and new_tokens[0] == 4136:
         new_tokens = new_tokens[1:]
 
