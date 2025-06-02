@@ -113,11 +113,14 @@ def generate_audio_tokens_pytorch(text, tokenizer, max_new_tokens=1024):
 
 
 def generate_audio_tokens_llamacpp(text, tokenizer, max_new_tokens=1024*10):
+
+    start = time.time()
+
     phonemes = phonemize(text, language='en-us', backend='espeak', with_stress=True)
     token_ids = tokenizer.tokenize_ids(phonemes)
 
     token_ids = [x for x in token_ids if x != 4136]
-    tokens = token_ids + [2] + [4136]
+    tokens = [4136] + token_ids + [2]
 
 
     
@@ -134,6 +137,10 @@ def generate_audio_tokens_llamacpp(text, tokenizer, max_new_tokens=1024*10):
             
         llm.eval([token])
 
+    print(f"llamacpp took {time.time() - start:.2f}s")
+
+
+    ###########################
     new_tokens = output_tokens
     while new_tokens[0] == 4136:
         new_tokens = new_tokens[1:]
@@ -202,7 +209,10 @@ def generate_audio(text):
     if new_tokens and new_tokens[-1] == eos_token:
         new_tokens = new_tokens[:-1]
 
+    start = time.time()
     samples, sample_rate = decoder.decode(new_tokens)
+    print(f"Decoder took: {time.time() - start:.2f}s")
+
     samples = decoder.normalize_samples(samples)
 
     buffer = io.BytesIO()
@@ -231,3 +241,4 @@ def tts():
 if __name__ == "__main__":
     initialize_loaders()
     app.run(host='0.0.0.0', port=5000)
+
