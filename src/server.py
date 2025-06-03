@@ -40,7 +40,7 @@ def initialize_loaders():
         temperature=0.0,  # Deterministic
         top_k=1,         # Only top token
         top_p=1.0,       # No nucleus sampling
-        repeat_penalty=1.0,
+        repeat_penalty=1.4,
         n_ctx=4096,
         n_gpu_layers=-1  # Use all layers on GPU
     )
@@ -110,15 +110,30 @@ def generate_audio_tokens_llamacpp(text, tokenizer, max_new_tokens=1024):
 
     start = time.time()
 
-    if len(text) < 14:
-        max_new_tokens = 200
+    if len(text) < 25:
+        max_new_tokens = 256
 
     phonemes = phonemize(text, language='en-us', backend='espeak', with_stress=True)
-    token_ids = tokenizer.tokenize_ids(phonemes)
+    token_ids = tokenizer.tokenize_ids(phonemes) 
 
     token_ids = [x for x in token_ids if x != 4136]
-    tokens = [4136] + token_ids + [2]
+    token_ids = token_ids + [1] * (4 - len(token_ids))
 
+    print ( token_ids )
+    build_phonemes = ""
+    for token_id in token_ids:
+        token = real_tokenizer.convert_ids_to_tokens([token_id])[0]
+        build_phonemes = build_phonemes + "||" + token
+
+    print( build_phonemes )
+ 
+    if build_phonemes[:3] != "||▁":
+        token_ids = [4136] + token_ids
+
+    tokens = token_ids + [2]
+    print( tokens )
+
+    
 
     
     llm.reset()
@@ -140,7 +155,7 @@ def generate_audio_tokens_llamacpp(text, tokenizer, max_new_tokens=1024):
 
     ###########################
     new_tokens = output_tokens
-    print ( new_tokens )
+    #print ( new_tokens )
 
     while new_tokens[0] == 4136:
         new_tokens = new_tokens[1:]
@@ -150,8 +165,8 @@ def generate_audio_tokens_llamacpp(text, tokenizer, max_new_tokens=1024):
         new_tokens = new_tokens[:-1]
     new_tokens = [x - 4 for x in new_tokens]   
 
-    print( "FINAL")
-    print ( new_tokens )
+    #print( "FINAL")
+    #print ( new_tokens )
 
 
     return new_tokens
