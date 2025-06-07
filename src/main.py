@@ -13,31 +13,230 @@ from tokens import Tokenizer
 from decoder import SNACDecoder
 import torch
 import soundfile as sf
+import re
+import sys
+from strategy6 import test_snac_strategy_6, test_snac_strategy_6_detailed
 
-def main():
-    feature_extractor = FeatureExtractor('2cent.gguf')
+
+def generate_audio_tokens(text, tokenizer, feature_extractor, max_new_tokens=1024):
+    """
+    Generate tokens from phonemes using the Qwen3 model
+    """
+    
+    # Step 1: Phonemize text
+    phonemes = phonemize(text, language='en-us', backend='espeak', with_stress=True)
+    
+    print(f"Phonemes: {phonemes}")
+    
+    # Step 2: Tokenize phonemes
+    token_ids = tokenizer.tokenize_ids(phonemes) 
+    token_ids = [x for x in token_ids if x != 4136]
+    token_ids = token_ids + [2] + [4136]
+    
+    input_ids = torch.LongTensor([token_ids])
+    print(f"Input shape: {input_ids.shape}")
+    print(f"Input tokens: {[tokenizer.get_tokenizer().id_to_token(token) for token in token_ids]}")
+    
+    # Step 3: Generate audio tokens using the causal LM
+    with torch.no_grad():
+        # Try to get pad_token_id and eos_token_id safely
+        pad_token_id = None
+        eos_token_id = None
+        
+        try:
+            if hasattr(tokenizer.get_tokenizer(), 'pad_token_id'):
+                pad_token_id = tokenizer.get_tokenizer().pad_token_id
+        except:
+            pad_token_id = 1  # Default 
+        try:
+            eos_token_id = tokenizer.get_tokenizer().token_to_id("</s>") 
+            # if hasattr(tokenizer.get_tokenizer(), 'eos_token_id'):
+            #     eos_token_id = tokenizer.get_tokenizer().eos_token_id
+        except:
+            eos_token_id = None  # Let model decide
+        
+        # Use the underlying Qwen3ForCausalLM model to generate
+        generated_ids = feature_extractor.model.generate(
+            input_ids=input_ids,
+            max_new_tokens=max_new_tokens,
+            do_sample=False,
+            temperature=0.0,
+            pad_token_id=pad_token_id,
+            eos_token_id=eos_token_id,
+        )
+    
+    new_tokens = generated_ids[0][len(token_ids):]
+    
+    return new_tokens
+
+def get_logits_and_sample(text, tokenizer, feature_extractor):
+    """
+    Alternative: Get logits and manually sample tokens
+    """
+    # Phonemize and tokenize
+    phonemes = phonemize(text, preserve_punctuation=True)
+    token_ids = tokenizer.tokenize_ids(phonemes)
+    input_ids = torch.LongTensor([token_ids])
+    
+    with torch.no_grad():
+        # Get logits from the model
+        outputs = feature_extractor.model(input_ids)
+        logits = outputs.logits  # Shape: [batch_size, seq_len, vocab_size]
+        
+        # Get the logits for the last position (next token prediction)
+        next_token_logits = logits[0, -1, :]  # Shape: [vocab_size]
+        
+        # Sample or take the most likely token
+        next_token_id = torch.argmax(next_token_logits).item()
+        
+        # Convert to string
+        next_token_str = tokenizer.get_tokenizer().id_to_token(next_token_id)
+        
+        print(f"Next predicted token: {next_token_str} (ID: {next_token_id})")
+        
+        return next_token_str, next_token_logits
+
+def check_vocabulary_for_audio_tokens(tokenizer):
+    """
+    Check if the tokenizer vocabulary contains audio tokens
+    """
+    # Try different ways to get vocab size
+    vocab_size = None
+    try:
+        vocab_size = tokenizer.get_tokenizer().vocab_size
+    except AttributeError:
+        try:
+            vocab_size = len(tokenizer.get_tokenizer().get_vocab())
+        except:
+            # Use the model's vocab size from config
+            vocab_size = 6000  # From your FeatureExtractor config
+    
+    audio_tokens = []
+    print(f"Checking vocabulary of size {vocab_size} for audio tokens...")
+    
+    # Sample a range of token IDs to see what tokens exist
+    sample_ranges = [
+        range(0, 100),          # First 100 tokens
+        range(vocab_size-100, vocab_size),  # Last 100 tokens
+        range(1000, 1100),      # Middle range
+        range(2000, 2100),      # Another middle range
+        range(4000, 4100),      # Higher range where audio tokens might be
+    ]
+    
+    for token_range in sample_ranges:
+        for token_id in token_range:
+            try:
+                token_str = tokenizer.get_tokenizer().id_to_token(token_id)
+                if token_str and ('audio' in token_str.lower() or token_str.startswith('<') or token_str.startswith('▁<')):
+                    audio_tokens.append((token_id, token_str))
+            except:
+                continue
+    
+    print(f"Found potential audio tokens: {audio_tokens[:20]}")
+    return audio_tokens
+
+def debug_model_generation(text, tokenizer, feature_extractor):
+    """
+    Debug the model's generation capabilities
+    """
+    phonemes = phonemize(text, language='en-us', backend='espeak', with_stress=True)
+  
+    token_ids = tokenizer.tokenize_ids(phonemes)
+    input_ids = torch.LongTensor([token_ids])
+    
+    print("=== MODEL DEBUG INFO ===")
+    print(f"Model type: {type(feature_extractor.model)}")
+    print(f"Config vocab size: {feature_extractor.config.vocab_size}")
+    print(f"Hidden size: {feature_extractor.config.hidden_size}")
+    
+    # Debug tokenizer
+    print(f"Tokenizer type: {type(tokenizer)}")
+    print(f"Tokenizer methods: {[m for m in dir(tokenizer) if not m.startswith('_')]}")
+    
+    # Test forward pass
+    with torch.no_grad():
+        outputs = feature_extractor.model(input_ids)
+        print(f"Logits shape: {outputs.logits.shape}")
+        print(f"Logits range: {outputs.logits.min().item():.3f} to {outputs.logits.max().item():.3f}")
+        
+        # Check if model has generate method
+        if hasattr(feature_extractor.model, 'generate'):
+            print("✓ Model has generate() method")
+        else:
+            print("✗ Model missing generate() method")
+        
+        # Show some sample tokens
+        print("\nSample token mappings:")
+        for i in range(0, min(50, feature_extractor.config.vocab_size), 5):
+            try:
+                token_str = tokenizer.get_tokenizer().id_to_token(i)
+                print(f"  {i}: '{token_str}'")
+            except:
+                print(f"  {i}: <error>")
+                break
+
+# Main usage function
+
+def main(): 
+
+    version = "v2"
+    text = "Hello world, this is a test"
+    # Parse args: first can be version (e.g., v1 or v2), rest is text
+    if len(sys.argv) > 1:
+        if sys.argv[1] in ["v1", "v2"]:
+            version = sys.argv[1]
+            text = " ".join(sys.argv[2:]) if len(sys.argv) > 2 else text
+        else:
+            text = " ".join(sys.argv[1:])
+
+    # Version-based selection
+    if version == "v1":
+        feature_extractor = FeatureExtractor('2cent_v1.gguf', 64)
+    else:
+        feature_extractor = FeatureExtractor('2cent.gguf', 256)
+
     tokenizer = Tokenizer('tokenizer.json')
     decoder = SNACDecoder("decoder_model.onnx", num_bands=3)
     
-    # Phonemize
-    text = "Hello world! How are you?"
-    phonemes = phonemize(text, preserve_punctuation=True)
-
-    # Tokenize
-    token_ids = tokenizer.tokenize_ids(phonemes)
-    input_ids = torch.LongTensor([token_ids])
-
-    # Extract features using the GGUF model
-    features = feature_extractor.extract_features(input_ids)
-    # ^ [1, 17, 1024]
+    # Phonemize 
+    #it doesn't like punctuations ! ? .
+    #text = "Hello world, this is a test"
+       
+    # Debug first 
+    # debug_model_generation(text, tokenizer, feature_extractor)
+    # check_vocabulary_for_audio_tokens(tokenizer)
     
-    # token_ids = [tokenizer.get_tokenizer().id_to_token(token) for token in token_ids]
-    # snac_codes = decoder.extract_snac_codes_from_tokens(token_ids, tokenizer.get_tokenizer())
+    # Try to generate audio tokens
+    try:
+        new_tokens = generate_audio_tokens(text, tokenizer, feature_extractor)
+        #print(f"\nFinal audio tokens: {audio_tokens}")
 
-    snac_codes = [3981, 426, 3909, 3977, 2426, 1568, 3422, 2068, 1736, 3422, 3422, 1736, 1568, 1568, 3718, 1314, 816, 1467, 2681, 869, 477, 1048, 437, 1865, 3287, 957, 1311, 2624, 3902, 1036, 2511, 897, 1473, 3245, 3272, 2363, 2463, 1123, 270, 3165, 2432, 2808, 4091, 703, 3529, 1030, 98, 2291, 3568, 1291, 3251, 3762, 1157, 3736, 1943, 1194, 1648, 1860, 1308, 3159, 2921, 1655, 1034, 2631, 2576, 386, 2958, 743, 806, 4092, 611, 1656, 1313, 613, 2967, 1689, 2485, 286, 3690, 224, 3219, 1627, 3233, 3371, 1794, 1219, 2416, 2715, 2474, 309, 1694, 148, 3208, 261, 1355, 2694, 2445, 3885, 2830, 1872, 1893, 1226, 1879, 1891, 2014, 3081, 2214, 3602, 1130, 2674, 1188, 3825, 819, 3429, 1953, 2923, 2646, 2044, 3888, 3081, 50, 1834, 1479, 1370, 2065, 490, 1441, 1070, 1153, 524, 3318, 739, 1438, 2985, 2755, 3779, 1135, 1295, 1462, 1846, 148, 1442, 2221, 3319, 2557, 212, 231, 3092, 1198, 2035, 3545, 4042, 3476, 986, 2423, 850, 1373, 3392, 348, 2957, 2259, 718, 3590, 3324, 3223, 551, 2183, 3745, 588, 591, 2612, 2424, 542, 1673, 4015, 2335, 825, 2506, 3668, 3155, 2757, 1508, 2335, 768, 2045, 1763, 2330, 1128, 3325, 2901, 125, 508, 1920, 3512, 2805, 2459, 1050, 1336, 2349, 3927, 455, 1547, 1744, 2879, 1233, 2315, 1440, 663, 1721, 793, 4007, 3554, 3567, 1014, 727, 512, 1754, 3885, 4081, 2030, 724, 392, 3431, 3651, 2644, 3550, 3945, 429, 2554, 2202, 2743, 2068, 2609, 1301, 155, 1736, 3422, 1568, 2068, 1736, 3422, 3422, 1736, 3422, 3422, 3981, 2426, 1568, 1532, 2426, 3602, 1855]
-    samples, sample_rate = decoder.decode(snac_codes)
-    samples = decoder.normalize_samples(samples)
-    sf.write('audio.wav', samples, sample_rate)
-    print('Created audio.wav')
+
+        new_tokens = new_tokens.tolist()
+        while new_tokens[0] == 4136:
+            new_tokens = new_tokens[1:]
+
+        eos_token = 3
+        if new_tokens and new_tokens[-1] == eos_token:
+            new_tokens = new_tokens[:-1]
+            
+        # for i in range(7):
+        #     success = test_snac_strategy_6(new_tokens, "tokenizer.json", "decoder_model.onnx")
+        #     if success:
+        #         print("Strategy 6 PASSED")
+        #         break
+        #     else:
+        #         new_tokens = new_tokens[1:]
+
+        new_tokens = [x - 4 for x in new_tokens]
+        #snac_codes = [int(re.search(r'\d+', token).group()) for token in audio_tokens]
+        samples, sample_rate = decoder.decode(new_tokens)
+        samples = decoder.normalize_samples(samples)
+        sf.write('audio.wav', samples, sample_rate)
+        print('Created audio.wav')
+
+    
+    except Exception as e:
+        print(f"Generation failed: {e}")
 
 main()
